@@ -23,7 +23,7 @@ app.post("/google-login", Controller.postGoogleLogin);
 app.post("/register", Controller.postRegister);
 
 app.get("/leaderboard", Controller.getUserByCpmDesc);
-app.patch("/user/:id", Controller.patchUserByCpm);
+app.patch("/user/:id", Controller.patchUserCpmById);
 app.get("/random-words", Controller.generateRandomWords);
 
 app.use(errorHandler);
