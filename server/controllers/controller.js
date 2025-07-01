@@ -124,7 +124,7 @@ class Controller {
     }
   }
 
-  static async patchUserByCpm(req, res, next) {
+  static async patchUserCpmById(req, res, next) {
     try {
       const { id } = req.params;
       const { cpm } = req.body;
@@ -161,6 +161,20 @@ class Controller {
       res.status(200).json({
         text: formattedWords,
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async updateUserCpmById(id, cpm) {
+    try {
+      const [updatedRows, updatedUsers] = await User.update(
+        { cpm },
+        {
+          where: { id },
+          returning: true,
+        }
+      );
     } catch (error) {
       next(error);
     }
