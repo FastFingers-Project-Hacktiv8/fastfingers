@@ -1,9 +1,10 @@
-"use client";
-
 import { useState } from "react";
 import { User, Mail, Lock, Eye, EyeOff } from "lucide-react";
+import axios from "axios";
+import baseUrl from "../api/baseUrl";
+import { toast } from "react-toastify";
 
-const RegisterForm = ({ onSwitchMode, onTyping }) => {
+const RegisterForm = ({ onSwitchMode, onTyping, setIsRegister }) => {
   const [formData, setFormData] = useState({
     username: "",
     email: "",
@@ -21,9 +22,16 @@ const RegisterForm = ({ onSwitchMode, onTyping }) => {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log("Registration data:", formData);
+    try {
+      await axios.post(`${baseUrl}/register`, formData);
+
+      setIsRegister(false);
+      toast.success("Registeration successful! Please log in.");
+    } catch (error) {
+      toast.error(error?.response?.data?.message);
+    }
   };
 
   return (

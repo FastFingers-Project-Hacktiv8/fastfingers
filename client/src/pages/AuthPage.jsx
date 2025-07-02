@@ -50,6 +50,7 @@ const AuthPage = () => {
             <RegisterForm
               onSwitchMode={() => setIsRegister(false)}
               onTyping={handleTyping}
+              setIsRegister={setIsRegister}
             />
           ) : (
             <LoginForm

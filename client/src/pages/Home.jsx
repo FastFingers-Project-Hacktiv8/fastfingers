@@ -4,8 +4,8 @@ export default function Home() {
   const {
     // Socket state
     socketConnected,
-    
-    // Game state  
+
+    // Game state
     gameStatus,
     text,
     userInput,
@@ -26,7 +26,7 @@ export default function Home() {
     spectatorMessage,
     progress,
     username,
-    
+
     // Actions
     startGame,
     resetGame,
@@ -37,39 +37,6 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-4">
       <div className="max-w-4xl mx-auto space-y-4">
-        <div className="bg-white shadow-lg p-6 rounded-xl text-center border border-gray-100">
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
-            🚗 FastFingers Typing Race
-          </h1>
-          <p className="text-gray-600 mb-4">
-            Race against others in real-time typing challenges!
-          </p>
-          <div className="mt-2 flex items-center justify-center space-x-4">
-            <div className="flex items-center">
-              <div
-                className={`w-3 h-3 rounded-full mr-2 ${
-                  socketConnected ? "bg-green-500" : "bg-red-500"
-                }`}
-              ></div>
-              <span
-                className={`text-sm ${
-                  socketConnected ? "text-green-600" : "text-red-600"
-                }`}
-              >
-                {socketConnected ? "Connected" : "Disconnected"}
-              </span>
-            </div>
-            <div className="text-sm text-gray-600">
-              Status: <span className="font-medium">{gameStatus}</span>
-            </div>
-            {!socketConnected && (
-              <div className="text-xs text-red-500">
-                Check if server is running on port 3000
-              </div>
-            )}
-          </div>
-        </div>
-
         <div className="bg-white rounded-lg p-4 shadow">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-semibold text-gray-700">
@@ -105,39 +72,46 @@ export default function Home() {
               </div>
             )}
           </div>
-          <div className="relative h-24 bg-gradient-to-r from-green-100 to-blue-100 rounded-lg border-2 border-gray-200">
-            {players.map((player, index) => {
-              const isCurrentUser = player.username === username;
-              const carEmoji = isCurrentUser ? "🚗" : "🚙";
-              const trackPosition = Math.min(player.progress || 0, 95);
+          <div className="h-48 overflow-y-auto relative bg-gradient-to-r from-green-100 to-blue-100 rounded-lg border-2 border-gray-200">
+            <div
+              className="relative"
+              style={{ height: `${players.length * 56}px` }}
+            >
+              {players.map((player, index) => {
+                const isCurrentUser = player.username === username;
+                const carEmoji = isCurrentUser ? "🚗" : "🚙";
+                const trackPosition = Math.min(player.progress || 1, 95);
 
-              return (
-                <div
-                  key={player.username}
-                  className="absolute transform -translate-y-1/2 transition-all duration-500 ease-out"
-                  style={{
-                    left: `${trackPosition}%`,
-                    top: `${20 + index * 20}px`,
-                  }}
-                >
-                  <div className="flex flex-col items-center">
-                    <span className="text-xl">{carEmoji}</span>
-                    <span
-                      className={`text-xs font-medium px-2 py-1 rounded ${
-                        isCurrentUser
-                          ? "bg-blue-100 text-blue-700"
-                          : "bg-gray-100 text-gray-600"
-                      }`}
-                    >
-                      {player.username}
-                    </span>
+                return (
+                  <div
+                    key={player.username}
+                    className="absolute transform -translate-y-1/2 transition-all duration-500 ease-out"
+                    style={{
+                      left: `${trackPosition}%`,
+                      top: `${30 + index * 56}px`, // jarak antar car
+                    }}
+                  >
+                    <div className="flex flex-col items-center">
+                      <span className="text-xl">{carEmoji}</span>
+                      <span
+                        className={`text-xs font-medium px-2 py-1 rounded line-clamp-[calc(var(--characters)/6)] ... ${
+                          isCurrentUser
+                            ? "bg-blue-100 text-blue-700"
+                            : "bg-gray-100 text-gray-600"
+                        }`}
+                      >
+                        {player.username.length > 5
+                          ? player.username.slice(0, 5) + "..."
+                          : player.username}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
 
-            <div className="absolute right-2 top-1/2 transform -translate-y-1/2 text-3xl">
-              🏁
+              <div className="absolute right-2 top-1/2 transform -translate-y-1/2 text-3xl items-center">
+                🏁
+              </div>
             </div>
           </div>
         </div>
@@ -214,6 +188,32 @@ export default function Home() {
             autoFocus={gameStatus === "playing" && !isSpectator}
           />
         </div>
+
+        {gameStatus === "playing" && (
+          <div className="bg-white rounded-lg shadow p-4">
+            <h3 className="text-lg font-semibold text-gray-700 mb-3 text-center">
+              📊 Real-time Performance
+            </h3>
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-3 rounded-lg border border-blue-200">
+                <div className="text-3xl font-bold text-blue-600">{cpm}</div>
+                <div className="text-sm text-blue-700 font-medium">CPM</div>
+              </div>
+              <div className="bg-gradient-to-br from-green-50 to-green-100 p-3 rounded-lg border border-green-200">
+                <div className="text-3xl font-bold text-green-600">
+                  {accuracy}%
+                </div>
+                <div className="text-sm text-green-700 font-medium">
+                  Accuracy
+                </div>
+              </div>
+              <div className="bg-gradient-to-br from-red-50 to-red-100 p-3 rounded-lg border border-red-200">
+                <div className="text-3xl font-bold text-red-600">{errors}</div>
+                <div className="text-sm text-red-700 font-medium">Errors</div>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-3 gap-4 text-center">
           <div className="bg-white p-3 rounded shadow">

@@ -13,8 +13,10 @@ let gameState = {
   countdownTimer: null,
 };
 
-// Helper function to calculate CPM (Characters Per Minute)
-function calculateCPM(correctChars, timeElapsed) {
+// Helper function to calculate CPM (Characters Per Minute) - Fixed version
+function calculateCPM(correctChars, gameStartTime) {
+  if (!gameStartTime) return 0;
+  const timeElapsed = Date.now() - gameStartTime;
   if (timeElapsed <= 0) return 0;
   const minutes = timeElapsed / 60000; // Convert ms to minutes
   return Math.round(correctChars / minutes);
@@ -24,6 +26,23 @@ function calculateCPM(correctChars, timeElapsed) {
 function calculateAccuracy(correctChars, totalChars) {
   if (totalChars === 0) return 100;
   return Math.round((correctChars / totalChars) * 100);
+}
+
+// Helper function to get sorted players by CPM
+function getSortedPlayersByCpm() {
+  return Array.from(gameState.players.values()).sort((a, b) => {
+    // First sort by finished status (finished players first)
+    if (a.finished && !b.finished) return 1;
+    if (!a.finished && b.finished) return -1;
+
+    // Then sort by position for finished players
+    if (a.finished && b.finished) {
+      return a.position - b.position;
+    }
+
+    // For unfinished players, sort by CPM (highest first)
+    return b.cpm - a.cpm;
+  });
 }
 
 // Helper function to end the game
@@ -56,10 +75,9 @@ function endGame(io) {
     }))
   );
 
+  // Send final results sorted by position
   io.emit("gameFinished", {
-    results: Array.from(gameState.players.values()).sort(
-      (a, b) => a.position - b.position
-    ),
+    results: getSortedPlayersByCpm(),
   });
 }
 
@@ -69,6 +87,49 @@ const initializeSocket = (httpServer) => {
       origin: "*",
     },
   });
+
+  // Periodic CPM update for all players (updates every 2 seconds during game)
+  let gameUpdateInterval = null;
+
+  const startGameUpdates = () => {
+    if (gameUpdateInterval) clearInterval(gameUpdateInterval);
+
+    gameUpdateInterval = setInterval(() => {
+      if (gameState.status === "playing" && gameState.startTime) {
+        let shouldUpdate = false;
+
+        // Recalculate CPM for all players based on current game time
+        gameState.players.forEach((player) => {
+          if (!player.isSpectator && !player.finished) {
+            const newCpm = calculateCPM(
+              player.correctChars,
+              gameState.startTime
+            );
+            if (newCpm !== player.cpm) {
+              player.cpm = newCpm;
+              shouldUpdate = true;
+            }
+          }
+        });
+
+        // Only broadcast if there were changes
+        if (shouldUpdate) {
+          io.emit("playersUpdate", {
+            players: getSortedPlayersByCpm(),
+            gameStatus: gameState.status,
+            text: gameState.text,
+          });
+        }
+      }
+    }, 2000); // Update every 2 seconds
+  };
+
+  const stopGameUpdates = () => {
+    if (gameUpdateInterval) {
+      clearInterval(gameUpdateInterval);
+      gameUpdateInterval = null;
+    }
+  };
 
   io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
@@ -153,9 +214,9 @@ const initializeSocket = (httpServer) => {
         });
       }
 
-      // Broadcast updated player list
+      // Broadcast updated player list sorted by CPM
       io.emit("playersUpdate", {
-        players: Array.from(gameState.players.values()),
+        players: getSortedPlayersByCpm(),
         gameStatus: gameState.status,
         text: gameState.text,
       });
@@ -208,6 +269,9 @@ const initializeSocket = (httpServer) => {
             gameState.status = "playing";
             gameState.startTime = Date.now();
 
+            // Start periodic updates
+            startGameUpdates();
+
             io.emit("gameStart", {
               text: gameState.text,
               startTime: gameState.startTime,
@@ -238,7 +302,7 @@ const initializeSocket = (httpServer) => {
       const player = gameState.players.get(socket.id);
       if (!player || player.isSpectator) return; // Spectators can't participate
 
-      // Set player start time if this is their first input
+      // Set player start time if this is their first input (for individual tracking)
       if (!player.startTime && userInput.length > 0) {
         player.startTime = Date.now();
       }
@@ -261,11 +325,15 @@ const initializeSocket = (httpServer) => {
       player.correctChars = correctChars;
       player.totalChars = totalChars;
 
-      // Calculate CPM and accuracy if player has started typing
-      if (player.startTime && totalChars > 0) {
-        const timeElapsed = Date.now() - player.startTime;
-        player.cpm = calculateCPM(correctChars, timeElapsed);
+      // Calculate CPM and accuracy - Use game start time instead of player start time
+      if (gameState.startTime) {
+        // CPM based on total game time (will decrease if player stops typing)
+        player.cpm = calculateCPM(correctChars, gameState.startTime);
         player.accuracy = calculateAccuracy(correctChars, totalChars);
+      } else {
+        player.cpm = 0;
+        player.accuracy =
+          totalChars > 0 ? calculateAccuracy(correctChars, totalChars) : 100;
       }
 
       // Check if player finished
@@ -287,7 +355,7 @@ const initializeSocket = (httpServer) => {
         });
       }
 
-      // Broadcast progress to all players
+      // Broadcast progress to all players with individual player update
       io.emit("playerProgress", {
         playerId: socket.id,
         username: player.username,
@@ -298,17 +366,19 @@ const initializeSocket = (httpServer) => {
         position: player.position,
       });
 
+      // Broadcast updated sorted player list
+      io.emit("playersUpdate", {
+        players: getSortedPlayersByCpm(),
+        gameStatus: gameState.status,
+        text: gameState.text,
+      });
+
       // Check if all players finished
       const allFinished = Array.from(gameState.players.values()).every(
         (p) => p.finished
       );
       if (allFinished && gameState.players.size > 0) {
-        gameState.status = "finished";
-        io.emit("gameFinished", {
-          results: Array.from(gameState.players.values()).sort(
-            (a, b) => a.position - b.position
-          ),
-        });
+        endGame(io);
       }
     });
 
@@ -335,6 +405,9 @@ const initializeSocket = (httpServer) => {
 
     // Reset game
     socket.on("resetGame", () => {
+      // Stop periodic updates
+      stopGameUpdates();
+
       gameState.status = "waiting";
       gameState.startTime = null;
       gameState.text = "";
@@ -360,7 +433,7 @@ const initializeSocket = (httpServer) => {
       });
 
       io.emit("gameReset", {
-        players: Array.from(gameState.players.values()),
+        players: getSortedPlayersByCpm(),
         gameStatus: gameState.status,
       });
     });
@@ -378,13 +451,20 @@ const initializeSocket = (httpServer) => {
 
       gameState.players.delete(socket.id);
 
-      // Broadcast updated player list
+      // Broadcast updated player list sorted by CPM
       io.emit("playersUpdate", {
-        players: Array.from(gameState.players.values()),
+        players: getSortedPlayersByCpm(),
         gameStatus: gameState.status,
       });
     });
   });
+
+  // Update endGame function to stop periodic updates
+  const originalEndGame = endGame;
+  endGame = (io) => {
+    stopGameUpdates();
+    originalEndGame(io);
+  };
 
   return io;
 };

@@ -8,11 +8,24 @@ const router = createBrowserRouter([
   {
     path: "/auth",
     element: <AuthPage />,
+    loader: () => {
+      if (localStorage.getItem("access_token")) {
+        return redirect("/");
+      }
+      return null;
+    },
   },
 
   {
+    
     path: "/",
     element: <RootLayout />,
+    loader: () => {
+      if (!localStorage.getItem("access_token")) {
+        return redirect("/auth");
+      }
+      return null;
+    },
     children: [
       {
         path: "/",
