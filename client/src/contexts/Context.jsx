@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { jwtDecode } from "jwt-decode";
+import baseUrl from "../api/baseUrl";
 
 const SocketContext = createContext(null);
 
@@ -34,7 +35,7 @@ export const SocketProvider = ({ children }) => {
   const username = usernameRef.current;
 
   useEffect(() => {
-    const socket = io("http://localhost:3000", {
+    const socket = io(baseUrl, {
       transports: ["websocket"],
       autoConnect: true,
     });
@@ -73,6 +74,10 @@ export const SocketProvider = ({ children }) => {
       setIsSpectator(isSpectator);
     });
 
+    socket.on("spectatorStatusUpdate", ({ isSpectator }) => {
+      setIsSpectator(isSpectator);
+    });
+
     socket.on("countdown", (val) => {
       setCountdown(val);
     });
@@ -90,6 +95,7 @@ export const SocketProvider = ({ children }) => {
       setCountdown(null);
       setIsComplete(false);
       setGameTime(0);
+      setLoading(false);
     });
 
     socket.on("playerProgress", (data) => {
@@ -108,13 +114,14 @@ export const SocketProvider = ({ children }) => {
       setPlayers(data.players);
       if (data.gameStatus) setGameStatus(data.gameStatus);
       if (data.text) setText(data.text);
-      
+
       // Update current user stats from server data
-      const currentPlayer = data.players.find(p => p.username === username);
+      const currentPlayer = data.players.find((p) => p.username === username);
       if (currentPlayer) {
         setCpm(currentPlayer.cpm || 0);
         setAccuracy(currentPlayer.accuracy || 100);
         setErrors(currentPlayer.errors || 0);
+        setIsSpectator(currentPlayer.isSpectator || false);
       }
     });
 
@@ -184,17 +191,10 @@ export const SocketProvider = ({ children }) => {
     }
   };
 
-  const startGame = async () => {
+  const startGame = () => {
     if (!socketRef.current) return;
     setLoading(true);
-    try {
-      // Let the server generate AI text
-      socketRef.current.emit("startGame", { timeLimit });
-    } catch (error) {
-      console.error("Error starting game:", error);
-    } finally {
-      setLoading(false);
-    }
+    socketRef.current.emit("startGame", { timeLimit });
   };
 
   const contextValue = {
