@@ -29,6 +29,7 @@ app.use(errorHandler);
 
 const httpServer = createServer(app);
 
+// Initialize socket.io
 initializeSocket(httpServer);
 
 module.exports = {
