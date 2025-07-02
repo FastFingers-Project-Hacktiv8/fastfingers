@@ -1,58 +1,70 @@
 import { useNavigate } from "react-router";
 import { useSocket } from "../contexts/Context";
+import { User, LogOut, Wifi, WifiOff } from "lucide-react";
 
 const Navbar = () => {
   const navigate = useNavigate();
+  const { socketConnected, gameStatus, username } = useSocket();
+
   const handleLogout = () => {
     localStorage.removeItem("access_token");
     navigate("/auth");
   };
-  const { socketConnected, gameStatus } = useSocket();
+
   return (
-    <>
-      <div className="bg-black/90 shadow-lg p-1 text-center borde flex justify-between">
-        <div className="flex">
-          <div className="mt-2 flex items-center justify-center space-x-4 flex-col ml-4">
-            <div className="flex items-center">
-              <div
-                className={`w-3 h-3 rounded-full mr-2 ${
-                  socketConnected ? "bg-green-500" : "bg-red-500"
-                }`}
-              ></div>
-              <span
-                className={`text-sm ${
-                  socketConnected ? "text-green-600" : "text-red-600"
-                }`}
-              >
-                {socketConnected ? "Connected" : "Disconnected"}
-              </span>
+    <header className="bg-black text-white shadow-md border-b border-white/10">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row justify-between items-center gap-4 sm:gap-0">
+        {/* Left: User Info & Status */}
+        <div className="flex flex-col sm:items-start items-center gap-2">
+          {username && (
+            <div className="flex items-center gap-2 text-sm">
+              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-white to-blue-400 flex items-center justify-center shadow-md">
+                <User className="w-4 h-4 text-black" />
+              </div>
+              <span className="font-semibold">{username}</span>
             </div>
-            <div className="text-sm text-white">
-              Status: <span className="font-medium">{gameStatus}</span>
-            </div>
+          )}
+          <div className="flex flex-wrap justify-center sm:justify-start gap-2 text-xs">
+            <span
+              className={`px-2 py-0.5 rounded-full font-medium flex items-center gap-1.5 ${
+                socketConnected
+                  ? "bg-green-600/20 text-green-400 border border-green-500/40"
+                  : "bg-red-600/20 text-red-400 border border-red-500/40"
+              }`}
+            >
+              {socketConnected ? (
+                <Wifi className="w-3 h-3" />
+              ) : (
+                <WifiOff className="w-3 h-3" />
+              )}
+              {socketConnected ? "Connected" : "Disconnected"}
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-white/10 text-gray-300 border border-white/10 font-medium">
+              Status: <span className="text-white">{gameStatus}</span>
+            </span>
           </div>
         </div>
 
-        <div>
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2  ">
-            🚗 FastFingers Typing Race
+        {/* Center: Logo & Subtitle */}
+        <div className="text-center mr-24">
+          <h1 className="text-2xl font-extrabold bg-gradient-to-r from-white to-blue-400 bg-clip-text text-transparent tracking-wide drop-shadow-sm">
+            FastFingers
           </h1>
-          <p className="text-white mb-4">
-            Race against others in real-time typing challenges!
-          </p>
+          <p className="text-xs text-gray-500">Real-time Typing Race</p>
         </div>
 
-        <div className="flex justify-center items-center mr-2">
+        {/* Right: Logout */}
+        <div className="flex-shrink-0">
           <button
             onClick={handleLogout}
-            className="flex items-center px-3 py-2 rounded-lg text-red-500 hover:text-white hover:bg-red-500 transition-colors duration-200 font-bold"
+            className="flex items-center gap-2 px-4 py-2 text-sm bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition"
           >
-            <i className="fa-solid fa-right-from-bracket mr-3 w-5"></i>
-            <span>Logout</span>
+            <LogOut className="w-4 h-4" />
+            Logout
           </button>
         </div>
       </div>
-    </>
+    </header>
   );
 };
 

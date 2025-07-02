@@ -22,7 +22,6 @@ export const SocketProvider = ({ children }) => {
   const [isComplete, setIsComplete] = useState(false);
   const [loading, setLoading] = useState(false);
   const [gameTime, setGameTime] = useState(0);
-  const [isSpectator, setIsSpectator] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState("disconnected");
   const [error, setError] = useState(null);
 
@@ -69,13 +68,8 @@ export const SocketProvider = ({ children }) => {
       setError(null);
     });
 
-    socket.on("gameJoined", ({ gameStatus, isSpectator }) => {
+    socket.on("gameJoined", ({ gameStatus }) => {
       setGameStatus(gameStatus);
-      setIsSpectator(isSpectator);
-    });
-
-    socket.on("spectatorStatusUpdate", ({ isSpectator }) => {
-      setIsSpectator(isSpectator);
     });
 
     socket.on("countdown", (val) => {
@@ -121,7 +115,6 @@ export const SocketProvider = ({ children }) => {
         setCpm(currentPlayer.cpm || 0);
         setAccuracy(currentPlayer.accuracy || 100);
         setErrors(currentPlayer.errors || 0);
-        setIsSpectator(currentPlayer.isSpectator || false);
       }
     });
 
@@ -160,7 +153,7 @@ export const SocketProvider = ({ children }) => {
         setGameTime(elapsed);
         const remaining = Math.max(timeLimit - elapsed, 0);
         setTimeRemaining(remaining);
-        if (remaining === 0 && !isSpectator && !isComplete) {
+        if (remaining === 0 && !isComplete) {
           setIsComplete(true);
           // Don't set gameStatus to "finished" here - let server handle it
           socketRef.current.emit("timeUp");
@@ -168,14 +161,14 @@ export const SocketProvider = ({ children }) => {
       }, 1000);
     }
     return () => clearInterval(interval);
-  }, [gameStatus, startTime, timeLimit, isSpectator, isComplete]);
+  }, [gameStatus, startTime, timeLimit, isComplete]);
 
   useEffect(() => {
     // Hapus perhitungan CPM di client, hanya bergantung pada data dari server
-  }, [userInput, gameStatus, startTime, text, isSpectator]);
+  }, [userInput, gameStatus, startTime, text]);
 
   const setUserInputHandler = (val) => {
-    if (!isComplete && !isSpectator) {
+    if (!isComplete) {
       setUserInput(val);
       let correct = 0;
       let err = 0;
@@ -214,7 +207,6 @@ export const SocketProvider = ({ children }) => {
     position,
     isComplete,
     gameTime,
-    isSpectator,
     socketConnected: socketRef.current?.connected,
     connectionStatus,
     error,
