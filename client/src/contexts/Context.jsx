@@ -1,106 +1,96 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { jwtDecode } from "jwt-decode";
-export const SocketContext = createContext(null);
+
+const SocketContext = createContext(null);
 
 export const SocketProvider = ({ children }) => {
-  // All state variables
   const socketRef = useRef(null);
   const [gameStatus, setGameStatus] = useState("waiting");
   const [text, setText] = useState("");
   const [userInput, setUserInput] = useState("");
-  const [currentIndex, setCurrentIndex] = useState(0);
   const [startTime, setStartTime] = useState(null);
-  const [isComplete, setIsComplete] = useState(false);
+  const [timeLimit, setTimeLimit] = useState(60);
+  const [timeRemaining, setTimeRemaining] = useState(60);
   const [cpm, setCpm] = useState(0);
   const [accuracy, setAccuracy] = useState(100);
   const [errors, setErrors] = useState(0);
   const [countdown, setCountdown] = useState(null);
   const [players, setPlayers] = useState([]);
   const [position, setPosition] = useState(null);
-  const [socketConnected, setSocketConnected] = useState(false);
+  const [isComplete, setIsComplete] = useState(false);
   const [loading, setLoading] = useState(false);
   const [gameTime, setGameTime] = useState(0);
-  const [timeLimit, setTimeLimit] = useState(60);
-  const [timeRemaining, setTimeRemaining] = useState(60);
   const [isSpectator, setIsSpectator] = useState(false);
-  const [spectatorMessage, setSpectatorMessage] = useState("");
-
-  // Get or create persistent username
+  const [connectionStatus, setConnectionStatus] = useState("disconnected");
+  const [error, setError] = useState(null);
 
   const getUsername = () => {
     const { username } = jwtDecode(localStorage.getItem("access_token"));
-
     return username;
   };
 
   const usernameRef = useRef(getUsername());
   const username = usernameRef.current;
 
-  const progress = text.length > 0 ? (userInput.length / text.length) * 100 : 0;
-
-  // Socket connection setup
   useEffect(() => {
     const socket = io("http://localhost:3000", {
-      transports: ["websocket", "polling"],
-      timeout: 20000,
-      forceNew: false,
+      transports: ["websocket"],
       autoConnect: true,
     });
-
     socketRef.current = socket;
 
-    // Connection events
     socket.on("connect", () => {
-      setSocketConnected(true);
+      setConnectionStatus("connected");
+      setError(null);
+      console.log("Connected to server");
       socket.emit("joinGame", { username });
     });
 
-    socket.on("connect_error", () => setSocketConnected(false));
-    socket.on("disconnect", () => setSocketConnected(false));
-    socket.on("reconnect", () => setSocketConnected(true));
-
-    socket.on("duplicateConnection", (data) => {
-      alert("Another session detected. This connection will be closed.");
+    socket.on("disconnect", (reason) => {
+      setConnectionStatus("disconnected");
+      console.log("Disconnected:", reason);
+      if (reason === "io server disconnect") {
+        setError("Server disconnected the connection");
+      } else {
+        setError("Connection lost. Attempting to reconnect...");
+      }
     });
 
-    // Game events
-    socket.on("gameJoined", ({ gameStatus, isSpectator, message }) => {
+    socket.on("connect_error", (error) => {
+      setConnectionStatus("error");
+      setError("Failed to connect to server");
+      console.error("Connection error:", error);
+    });
+
+    socket.on("reconnect", () => {
+      setConnectionStatus("connected");
+      setError(null);
+    });
+
+    socket.on("gameJoined", ({ gameStatus, isSpectator }) => {
       setGameStatus(gameStatus);
-      setIsSpectator(isSpectator || false);
-      if (message) {
-        setSpectatorMessage(message);
-      }
+      setIsSpectator(isSpectator);
     });
 
-    socket.on("playersUpdate", (data) => {
-      setPlayers(data.players);
-      setGameStatus(data.gameStatus);
-      if (data.text) setText(data.text);
+    socket.on("countdown", (val) => {
+      setCountdown(val);
     });
 
-    socket.on("countdown", (num) => setCountdown(num));
-
-    socket.on(
-      "gameStart",
-      ({ text, startTime, timeLimit: serverTimeLimit }) => {
-        setText(text);
-        setStartTime(startTime || Date.now());
-        if (serverTimeLimit) {
-          setTimeLimit(serverTimeLimit);
-          setTimeRemaining(serverTimeLimit);
-        }
-        setGameStatus("playing");
-        setUserInput("");
-        setCurrentIndex(0);
-        setIsComplete(false);
-        setErrors(0);
-        setCpm(0);
-        setAccuracy(100);
-        setCountdown(null);
-        setGameTime(0);
-      }
-    );
+    socket.on("gameStart", ({ text, startTime, timeLimit }) => {
+      setText(text);
+      setStartTime(startTime);
+      setTimeLimit(timeLimit);
+      setTimeRemaining(timeLimit);
+      setGameStatus("playing");
+      setUserInput("");
+      setCpm(0);
+      setAccuracy(100);
+      setErrors(0);
+      setCountdown(null);
+      setIsComplete(false);
+      setGameTime(0);
+    });
 
     socket.on("playerProgress", (data) => {
       setPlayers((prev) =>
@@ -110,6 +100,21 @@ export const SocketProvider = ({ children }) => {
       if (data.username === username) {
         setCpm(data.cpm || 0);
         setAccuracy(data.accuracy || 100);
+        setErrors(data.errors || 0);
+      }
+    });
+
+    socket.on("playersUpdate", (data) => {
+      setPlayers(data.players);
+      if (data.gameStatus) setGameStatus(data.gameStatus);
+      if (data.text) setText(data.text);
+      
+      // Update current user stats from server data
+      const currentPlayer = data.players.find(p => p.username === username);
+      if (currentPlayer) {
+        setCpm(currentPlayer.cpm || 0);
+        setAccuracy(currentPlayer.accuracy || 100);
+        setErrors(currentPlayer.errors || 0);
       }
     });
 
@@ -118,249 +123,105 @@ export const SocketProvider = ({ children }) => {
       setPosition(position);
     });
 
-    socket.on("gameFinished", ({ results }) => setPlayers(results));
+    socket.on("gameFinished", ({ results }) => {
+      setPlayers(results);
+      setGameStatus("finished");
+    });
 
     socket.on("gameReset", ({ players, gameStatus }) => {
       setPlayers(players);
       setGameStatus(gameStatus);
       setUserInput("");
-      setCurrentIndex(0);
-      setErrors(0);
       setIsComplete(false);
       setStartTime(null);
       setCpm(0);
       setAccuracy(100);
-      setText("");
+      setErrors(0);
       setGameTime(0);
       setTimeRemaining(timeLimit);
-      setIsSpectator(false);
-      setSpectatorMessage("");
+      setCountdown(null);
     });
 
     return () => socket.disconnect();
   }, [username, timeLimit]);
 
-  // Timer effect for tracking game time and countdown
   useEffect(() => {
-    let interval = null;
+    let interval;
     if (gameStatus === "playing" && startTime) {
       interval = setInterval(() => {
         const elapsed = Math.floor((Date.now() - startTime) / 1000);
-        const remaining = Math.max(timeLimit - elapsed, 0);
-
         setGameTime(elapsed);
+        const remaining = Math.max(timeLimit - elapsed, 0);
         setTimeRemaining(remaining);
-
-        // End game when time runs out (only for active players, not spectators)
-        if (remaining === 0 && !isComplete && !isSpectator) {
+        if (remaining === 0 && !isSpectator && !isComplete) {
           setIsComplete(true);
-          socketRef.current?.emit("timeUp");
+          // Don't set gameStatus to "finished" here - let server handle it
+          socketRef.current.emit("timeUp");
         }
       }, 1000);
-    } else if (gameStatus !== "playing") {
-      setGameTime(0);
-      setTimeRemaining(timeLimit);
     }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [gameStatus, startTime, timeLimit, isComplete, isSpectator]);
+    return () => clearInterval(interval);
+  }, [gameStatus, startTime, timeLimit, isSpectator, isComplete]);
 
-  // Typing progress handler
   useEffect(() => {
-    if (
-      text &&
-      gameStatus === "playing" &&
-      socketRef.current?.connected &&
-      !isSpectator
-    ) {
-      socketRef.current.emit("typingUpdate", {
-        userInput: userInput,
-        currentIndex: currentIndex,
-        startTime: startTime,
-        textLength: text.length,
-      });
-
-      if (userInput.length >= text.length && userInput === text) {
-        setIsComplete(true);
-      }
-    }
-  }, [userInput, currentIndex, startTime, gameStatus, text, isSpectator]);
-
-  // Character tracking for cursor position
-  useEffect(() => {
-    if (text && gameStatus === "playing") {
-      let newErrors = 0;
-      let nextCorrectPosition = 0;
-
-      for (let i = 0; i < userInput.length; i++) {
-        if (i < text.length) {
-          if (userInput[i] === text[i]) {
-            nextCorrectPosition = i + 1;
-          } else {
-            newErrors++;
-          }
-        }
-      }
-
-      if (
-        userInput.length > 0 &&
-        userInput[userInput.length - 1] === text[userInput.length - 1]
-      ) {
-        setCurrentIndex(nextCorrectPosition);
-      } else if (userInput.length === 0) {
-        setCurrentIndex(0);
-      }
-
-      setErrors(newErrors);
-    }
-  }, [userInput, text, gameStatus]);
-
-  // Real-time CPM calculation effect
-  useEffect(() => {
-    if (
-      gameStatus === "playing" &&
-      startTime &&
-      userInput.length > 0 &&
-      !isSpectator
-    ) {
-      const elapsed = Math.floor((Date.now() - startTime) / 1000);
-      if (elapsed > 0) {
-        // Count correct characters
-        let correctChars = 0;
-        for (let i = 0; i < userInput.length && i < text.length; i++) {
-          if (userInput[i] === text[i]) {
-            correctChars++;
-          }
-        }
-
-        // Calculate CPM (Characters Per Minute)
-        const currentCpm = Math.round((correctChars / elapsed) * 60);
-
-        // Calculate accuracy
-        const currentAccuracy =
-          userInput.length > 0
-            ? Math.round((correctChars / userInput.length) * 100)
-            : 100;
-
-        // Update local state for real-time display
-        setCpm(currentCpm);
-        setAccuracy(currentAccuracy);
-      }
-    }
+    // Hapus perhitungan CPM di client, hanya bergantung pada data dari server
   }, [userInput, gameStatus, startTime, text, isSpectator]);
 
-  // Continuous CPM update timer (updates every second during gameplay)
-  useEffect(() => {
-    let cpmInterval = null;
-    if (gameStatus === "playing" && startTime && !isSpectator) {
-      cpmInterval = setInterval(() => {
-        const elapsed = Math.floor((Date.now() - startTime) / 1000);
-        if (elapsed > 0) {
-          // Count correct characters
-          let correctChars = 0;
-          for (let i = 0; i < userInput.length && i < text.length; i++) {
-            if (userInput[i] === text[i]) {
-              correctChars++;
-            }
-          }
-
-          // Calculate CPM (Characters Per Minute)
-          const currentCpm = Math.round((correctChars / elapsed) * 60);
-
-          // Calculate accuracy
-          const currentAccuracy =
-            userInput.length > 0
-              ? Math.round((correctChars / userInput.length) * 100)
-              : 100;
-
-          // Update local state for real-time display
-          setCpm(currentCpm);
-          setAccuracy(currentAccuracy);
-        }
-      }, 1000); // Update every second
+  const setUserInputHandler = (val) => {
+    if (!isComplete && !isSpectator) {
+      setUserInput(val);
+      let correct = 0;
+      let err = 0;
+      for (let i = 0; i < val.length && i < text.length; i++) {
+        if (val[i] === text[i]) correct++;
+        else err++;
+      }
+      socketRef.current.emit("typingUpdate", {
+        userInput: val,
+        textLength: text.length,
+        errors: err,
+      });
     }
+  };
 
-    return () => {
-      if (cpmInterval) clearInterval(cpmInterval);
-    };
-  }, [gameStatus, startTime, userInput, text, isSpectator]);
-
-  // Game functions
   const startGame = async () => {
-    if (!socketRef.current?.connected) return;
-
+    if (!socketRef.current) return;
     setLoading(true);
     try {
-      const response = await fetch("http://localhost:3000/random-words");
-      const data = await response.json();
-      const aiText = data.text || data;
-      setText(aiText);
-      socketRef.current.emit("startGame", {
-        text: aiText,
-        timeLimit: timeLimit,
-      });
+      // Let the server generate AI text
+      socketRef.current.emit("startGame", { timeLimit });
     } catch (error) {
-      const fallbackText =
-        "The quick brown fox jumps over the lazy dog. Programming is a fun and creative activity that allows developers to build amazing applications.";
-      setText(fallbackText);
-      socketRef.current.emit("startGame", {
-        text: fallbackText,
-        timeLimit: timeLimit,
-      });
+      console.error("Error starting game:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const resetGame = () => {
-    socketRef.current?.emit("resetGame");
-  };
-
-  const setUserInputHandler = (value) => {
-    if (!isComplete && !isSpectator) {
-      setUserInput(value);
-    }
-  };
-
-  const setTimeLimitHandler = (newLimit) => {
-    setTimeLimit(newLimit);
-    setTimeRemaining(newLimit);
-  };
-
-  // Context value
   const contextValue = {
-    // Socket
-    socketRef,
-    socketConnected,
-
-    // Game state
     gameStatus,
-    text,
     userInput,
-    currentIndex,
+    setUserInput: setUserInputHandler,
+    text,
     startTime,
-    isComplete,
+    timeLimit,
+    setTimeLimit,
+    timeRemaining,
     cpm,
     accuracy,
     errors,
     countdown,
     players,
     position,
-    loading,
+    isComplete,
     gameTime,
-    timeLimit,
-    timeRemaining,
     isSpectator,
-    spectatorMessage,
-    progress,
+    socketConnected: socketRef.current?.connected,
+    connectionStatus,
+    error,
+    loading,
     username,
-
-    // Actions
     startGame,
-    resetGame,
-    setUserInput: setUserInputHandler,
-    setTimeLimit: setTimeLimitHandler,
+    resetGame: () => socketRef.current.emit("resetGame"),
   };
 
   return (
@@ -370,11 +231,4 @@ export const SocketProvider = ({ children }) => {
   );
 };
 
-// Custom hook to use socket context
-export const useSocket = () => {
-  const context = useContext(SocketContext);
-  if (!context) {
-    throw new Error("useSocket must be used within a SocketProvider");
-  }
-  return context;
-};
+export const useSocket = () => useContext(SocketContext);
