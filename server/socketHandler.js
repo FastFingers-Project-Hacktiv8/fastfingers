@@ -126,6 +126,14 @@ const initializeSocket = (httpServer) => {
         });
       });
 
+      // Notify all players about their new spectator status
+      gameState.players.forEach((player, socketId) => {
+        const playerSocket = io.sockets.sockets.get(socketId);
+        if (playerSocket) {
+          playerSocket.emit("spectatorStatusUpdate", { isSpectator: false });
+        }
+      });
+
       gameState.status = "countdown";
 
       try {
@@ -161,6 +169,16 @@ const initializeSocket = (httpServer) => {
             text: gameState.text,
           });
 
+          // Notify all players about their spectator status after game starts
+          gameState.players.forEach((player, socketId) => {
+            const playerSocket = io.sockets.sockets.get(socketId);
+            if (playerSocket) {
+              playerSocket.emit("spectatorStatusUpdate", {
+                isSpectator: player.isSpectator,
+              });
+            }
+          });
+
           // Mulai real-time CPM update setiap detik
           gameState.realTimeUpdateInterval = setInterval(() => {
             let hasUpdate = false;
@@ -173,7 +191,7 @@ const initializeSocket = (httpServer) => {
                 if (newCpm !== player.cpm) {
                   player.cpm = newCpm;
                   hasUpdate = true;
-                  
+
                   // Emit individual player progress
                   io.emit("playerProgress", {
                     username: player.username,

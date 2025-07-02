@@ -1,4 +1,5 @@
 import { useSocket } from "../contexts/Context";
+import { Loader2 } from "lucide-react";
 
 export default function Home() {
   const {
@@ -238,13 +239,17 @@ export default function Home() {
                   <button
                     onClick={startGame}
                     disabled={!socketConnected || loading}
-                    className="px-8 py-3 bg-gradient-to-r from-yellow-400 to-orange-500 text-black font-bold rounded-lg hover:from-yellow-500 hover:to-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg"
+                    className="px-8 py-3 bg-gradient-to-r from-yellow-400 to-orange-500 text-black font-bold rounded-lg hover:from-yellow-500 hover:to-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg flex items-center justify-center gap-2"
                   >
-                    {loading
-                      ? "🔄 Starting..."
-                      : gameStatus === "finished"
-                      ? "🏁 Start New Race"
-                      : "🏁 Start Race"}
+                    {loading ? (
+                      <>
+                        <Loader2 className="h-5 w-5 animate-spin" /> Starting...
+                      </>
+                    ) : gameStatus === "finished" ? (
+                      "🏁 Start New Race"
+                    ) : (
+                      "🏁 Start Race"
+                    )}
                   </button>
                 </div>
               </div>
