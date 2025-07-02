@@ -1,5 +1,5 @@
 const { Server } = require("socket.io");
-const { generateRandomWordsByAi } = require("./helpers/gemini");
+const generateRandomWordsByAi = require("./helpers/gemini");
 
 let gameState = {
   status: "waiting",
@@ -10,11 +10,12 @@ let gameState = {
   timeLimit: 60,
   gameTimer: null,
   countdownTimer: null,
+  realTimeUpdateInterval: null,
 };
 
-function calculateCPM(correctChars, gameStartTime) {
-  if (!gameStartTime) return 0;
-  const timeElapsed = Date.now() - gameStartTime;
+function calculateCPM(correctChars, playerStartTime) {
+  if (!playerStartTime) return 0;
+  const timeElapsed = Date.now() - playerStartTime;
   if (timeElapsed <= 0) return 0;
   const minutes = timeElapsed / 60000;
   return Math.round(correctChars / minutes);
@@ -37,7 +38,9 @@ function getSortedPlayersByCpm() {
 function endGame(io) {
   gameState.status = "finished";
   clearTimeout(gameState.gameTimer);
+  clearInterval(gameState.realTimeUpdateInterval);
   gameState.gameTimer = null;
+  gameState.realTimeUpdateInterval = null;
 
   const finishedPlayers = Array.from(gameState.players.values())
     .filter((p) => p.finished)
@@ -63,12 +66,15 @@ const initializeSocket = (httpServer) => {
       }
       gameState.userSessions.set(username, socket.id);
 
-      const isSpectator = ["playing", "countdown"].includes(gameState.status);
+      // const isSpectator = ["playing", "countdown"].includes(gameState.status);
+      const isSpectator = false; // Default to false, can be set later
+
       gameState.players.set(socket.id, {
         username,
         progress: 0,
         cpm: 0,
         accuracy: 100,
+        errors: 0,
         finished: false,
         position: 0,
         correctChars: 0,
@@ -100,14 +106,48 @@ const initializeSocket = (httpServer) => {
       });
     });
 
-    socket.on("startGame", async ({ text, timeLimit = 60 }) => {
-      if (gameState.status !== "waiting") return;
+    socket.on("startGame", async ({ timeLimit = 60 }) => {
+      if (!["waiting", "finished"].includes(gameState.status)) return;
 
       const player = gameState.players.get(socket.id);
-      if (!player || player.isSpectator) return;
+      if (!player) return;
+
+      // Reset semua pemain agar bisa main ketika game dimulai
+      gameState.players.forEach((p) => {
+        Object.assign(p, {
+          progress: 0,
+          cpm: 0,
+          accuracy: 100,
+          errors: 0,
+          finished: false,
+          position: 0,
+          correctChars: 0,
+          totalChars: 0,
+          startTime: null,
+          isSpectator: false, // Semua pemain yang sudah bergabung bisa main
+        });
+      });
+
+      // Notify all players about their new spectator status
+      gameState.players.forEach((player, socketId) => {
+        const playerSocket = io.sockets.sockets.get(socketId);
+        if (playerSocket) {
+          playerSocket.emit("spectatorStatusUpdate", { isSpectator: false });
+        }
+      });
 
       gameState.status = "countdown";
-      gameState.text = text || (await generateRandomWordsByAi());
+
+      try {
+        // Generate AI text for the race
+        gameState.text = await generateRandomWordsByAi();
+      } catch (error) {
+        console.error("Error generating AI text:", error);
+        // Fallback text
+        gameState.text =
+          "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs. How vexingly quick daft zebras jump!";
+      }
+
       gameState.timeLimit = timeLimit;
 
       let countdown = 3;
@@ -124,6 +164,59 @@ const initializeSocket = (httpServer) => {
             timeLimit: gameState.timeLimit,
           });
 
+          // Update semua pemain dengan status terbaru
+          io.emit("playersUpdate", {
+            players: getSortedPlayersByCpm(),
+            gameStatus: gameState.status,
+            text: gameState.text,
+          });
+
+          // Notify all players about their spectator status after game starts
+          gameState.players.forEach((player, socketId) => {
+            const playerSocket = io.sockets.sockets.get(socketId);
+            if (playerSocket) {
+              playerSocket.emit("spectatorStatusUpdate", {
+                isSpectator: player.isSpectator,
+              });
+            }
+          });
+
+          // Mulai real-time CPM update setiap detik
+          gameState.realTimeUpdateInterval = setInterval(() => {
+            let hasUpdate = false;
+            gameState.players.forEach((player) => {
+              if (player.startTime && !player.finished && !player.isSpectator) {
+                const newCpm = calculateCPM(
+                  player.correctChars,
+                  player.startTime
+                );
+                if (newCpm !== player.cpm) {
+                  player.cpm = newCpm;
+                  hasUpdate = true;
+
+                  // Emit individual player progress
+                  io.emit("playerProgress", {
+                    username: player.username,
+                    progress: player.progress,
+                    cpm: player.cpm,
+                    accuracy: player.accuracy,
+                    errors: player.errors,
+                    finished: player.finished,
+                    position: player.position,
+                  });
+                }
+              }
+            });
+
+            if (hasUpdate) {
+              io.emit("playersUpdate", {
+                players: getSortedPlayersByCpm(),
+                gameStatus: gameState.status,
+                text: gameState.text,
+              });
+            }
+          }, 1000);
+
           gameState.gameTimer = setTimeout(() => {
             if (gameState.status === "playing") endGame(io);
           }, timeLimit * 1000);
@@ -131,7 +224,7 @@ const initializeSocket = (httpServer) => {
       }, 1000);
     });
 
-    socket.on("typingUpdate", ({ userInput, textLength }) => {
+    socket.on("typingUpdate", ({ userInput, textLength, errors }) => {
       if (gameState.status !== "playing") return;
 
       const player = gameState.players.get(socket.id);
@@ -147,8 +240,11 @@ const initializeSocket = (httpServer) => {
       player.correctChars = correctChars;
       player.totalChars = userInput.length;
       player.progress = Math.min((userInput.length / textLength) * 100, 100);
-      player.cpm = calculateCPM(correctChars, gameState.startTime);
+
+      // Gunakan player.startTime untuk CPM real-time per pemain
+      player.cpm = calculateCPM(correctChars, player.startTime);
       player.accuracy = calculateAccuracy(correctChars, userInput.length);
+      player.errors = errors || 0; // Set errors dari client
 
       if (
         !player.finished &&
@@ -171,6 +267,7 @@ const initializeSocket = (httpServer) => {
         progress: player.progress,
         cpm: player.cpm,
         accuracy: player.accuracy,
+        errors: player.errors,
         finished: player.finished,
         position: player.position,
       });
@@ -202,12 +299,16 @@ const initializeSocket = (httpServer) => {
       gameState.startTime = null;
       gameState.timeLimit = 60;
       clearTimeout(gameState.gameTimer);
+      clearInterval(gameState.realTimeUpdateInterval);
+      gameState.gameTimer = null;
+      gameState.realTimeUpdateInterval = null;
 
       gameState.players.forEach((p) => {
         Object.assign(p, {
           progress: 0,
           cpm: 0,
           accuracy: 100,
+          errors: 0,
           finished: false,
           position: 0,
           correctChars: 0,
