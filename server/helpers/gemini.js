@@ -7,17 +7,13 @@ const ai = new GoogleGenAI({
 const generateRandomWordsByAi = async () => {
   const response = await ai.models.generateContent({
     model: "gemini-2.5-flash",
-    contents: `Generate exactly 60 random English words suitable for a typing test. Only common words separated by spaces. No punctuation, numbers, or special characters.`,
+    contents:
+      "Generate exactly 60 random English words suitable for a typing test. Only common words separated by spaces. No punctuation, numbers, or special characters.",
   });
 
-  // Clean up the text
-  const cleanedText = response.text
-    .replace(/[^\w\s]/g, "") // Remove punctuation
-    .replace(/\s+/g, " ") // Replace multiple spaces with single space
-    .trim();
+  // console.log(response.text);
 
-  console.log("AI generated text:", cleanedText);
-  return cleanedText;
+  return response.text;
 };
 
-module.exports = { generateRandomWordsByAi };
+module.exports = generateRandomWordsByAi;
